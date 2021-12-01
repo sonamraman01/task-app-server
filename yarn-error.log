@@ -1,0 +1,31 @@
+Arguments: 
+  /usr/local/bin/node /Users/dev2/.yarn/bin/yarn.js install express body-parser cors mongoose
+
+PATH: 
+  /Users/dev2/.yarn/bin:/Users/dev2/.config/yarn/global/node_modules/.bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Library/Apple/usr/bin:/Users/dev2/.yarn/bin:/Users/dev2/.config/yarn/global/node_modules/.bin
+
+Yarn version: 
+  1.22.5
+
+Node version: 
+  14.17.5
+
+Platform: 
+  darwin x64
+
+Trace: 
+  SyntaxError: /Users/dev2/todo-server/package.json: Unexpected end of JSON input
+      at JSON.parse (<anonymous>)
+      at /Users/dev2/.yarn/lib/cli.js:1625:59
+      at Generator.next (<anonymous>)
+      at step (/Users/dev2/.yarn/lib/cli.js:310:30)
+      at /Users/dev2/.yarn/lib/cli.js:321:13
+
+npm manifest: 
+  
+
+yarn manifest: 
+  No manifest
+
+Lockfile: 
+  No lockfile
