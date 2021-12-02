@@ -2,6 +2,20 @@ const express = require("express");
 var sqlite3 = require("sqlite3").verbose();
 var cors = require("cors");
 var db = new sqlite3.Database("todos.db");
+
+const knex = require("knex")({
+  client: "sqlite3",
+  connection: () => ({
+    filename: process.env.db,
+  }),
+  useNullAsDefault: true,
+});
+const bookshelf = require("bookshelf")(knex);
+
+const User = bookshelf.model("User", {
+  tableName: "users",
+});
+
 db.run(
   "CREATE TABLE if not exists todo (id INTEGER primary key autoincrement, title varchar(200), description varchar(200), isCompleted int(1))"
 );
@@ -49,25 +63,6 @@ app.get("/todo/:id", (req, res) => {
     }
   );
 });
-
-// app.get("/todo/:id", (req, res) => {
-//   const todo = {
-//     title: req.body.title,
-//     isCompleted: false,
-//   };
-//   db.each(
-//     "SELECT * from todo WHERE id = $id",
-//     {
-//       $id: req.params.id,
-//     },
-//     function () {
-//       res.json({
-//         success: true,
-//         payload: { ...todo },
-//       });
-//     }
-//   );
-// });
 
 app.post("/todo", (req, res) => {
   const todo = {
@@ -241,7 +236,6 @@ app.delete("/project", (req, res) => {
   });
 });
 
-
 db.run(
   "CREATE TABLE if not exists users (id INTEGER primary key autoincrement, username varchar(200), email varchar(200), password varchar(200))"
 );
@@ -294,9 +288,136 @@ app.delete("/user/:id", (req, res) => {
   );
 });
 
+app.post("/", (req, res) => {
+  new User({ email: req.body.email, password: req.body.password })
+    .fetch()
+    .then(processUser)
+    .catch(catchErrors);
+
+  function processUser(user) {
+    console.log(user);
+    console.log("Success!");
+  }
+
+  function catchErrors(error) {
+    console.log(error);
+    console.log("An error occured");
+  }
+});
+
+db.get("PRAGMA foreign_keys = ON");
+
+db.run(
+  "CREATE TABLE if not exists tasks (id INTEGER primary key autoincrement, title varchar(200), description varchar(200), start DATETIME , end DATETIME, assigned_to INTEGER, project_id INTEGER , isCompleted int(1), FOREIGN KEY (assigned_to) REFERENCES users (id), FOREIGN KEY (project_id) REFERENCES projects (id)  )"
+);
+
+app.post("/task", (req, res) => {
+  const task = {
+    title: req.body.title,
+    description: req.body.description,
+    start: req.body.start,
+    end: req.body.end,
+    assigned_to: req.body.assigned_to,
+    project_id: req.body.project_id,
+    isCompleted: false,
+  };
+  const sql = `INSERT into tasks (title, description, start, end, assigned_to, project_id, isCompleted) values (
+  "${task.title}" , "${task.description}" , '${task.start}', '${task.end}', ${task.assigned_to}, ${task.project_id}, ${task.isCompleted} )`;
+  db.run(sql, function () {
+    res.json({
+      success: true,
+      message: "Inserted Successfully",
+      payload: { ...task, id: this.lastID },
+    });
+  });
+});
+
+app.patch("/task/:id", (req, res) => {
+  const task = {
+    title: req.body.title,
+    description: req.body.description,
+    start: req.body.start,
+    end: req.body.end,
+    assigned_to: req.body.assigned_to,
+    project_id: req.body.project_id,
+    isCompleted: false,
+  };
+  db.run(
+    `UPDATE tasks SET title = "${task.title}", description= "${task.description}", start= '${task.start}', end = '${task.end}', assigned_to= ${task.assigned_to}, project_id= ${task.project_id}   WHERE id = $id`,
+    {
+      $id: req.params.id,
+    },
+    function () {
+      res.json({
+        success: true,
+        message: "Updated Successfully",
+        payload: { ...task, update: this.changes },
+      });
+    }
+  );
+});
+
+app.get("/task", (req, res) => {
+  const tasks = [];
+  db.each(
+    "SELECT * from tasks",
+    function (err, row) {
+      tasks.push({ ...row });
+    },
+    function () {
+      res.json({
+        success: true,
+        payload: tasks,
+      });
+    }
+  );
+});
+
+app.get("/task/:id", (req, res) => {
+  const task = [];
+  db.each(
+    "SELECT * from tasks WHERE id = $id",
+    {
+      $id: req.params.id,
+    },
+    function (err, row) {
+      task.push({ ...row });
+    },
+    function () {
+      res.json({
+        success: true,
+        payload: task,
+      });
+    }
+  );
+});
+
+app.delete("/task/:id", (req, res) => {
+  db.run(
+    "DELETE from tasks WHERE id = $id",
+    {
+      $id: req.params.id,
+    },
+    function () {
+      res.json({
+        success: true,
+        message: "Deleted Successfully",
+      });
+    }
+  );
+});
+
+app.delete("/task", (req, res) => {
+  db.run("DELETE from tasks WHERE 1", function () {
+    res.json({
+      success: true,
+      message: "All Items deleted successfully",
+    });
+  });
+});
 
 // app.delete("/", (req, res) => {
-//   db.run("DROP TABLE IF EXISTS users", function () {
+//   db.run("DROP TABLE IF EXISTS tasks", function () {
 //     res.json({
 //       success: true,
 //       message: "Deleted Successfully",
