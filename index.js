@@ -2,14 +2,18 @@ const express = require("express");
 var sqlite3 = require("sqlite3").verbose();
 var cors = require("cors");
 var db = new sqlite3.Database("todos.db");
+const app = express();
+app.use(cors());
+app.use(express.json());
 
 const knex = require("knex")({
   client: "sqlite3",
-  connection: () => ({
-    filename: process.env.db,
-  }),
+  connection: {
+    filename: "./todos.db",
+  },
   useNullAsDefault: true,
 });
+
 const bookshelf = require("bookshelf")(knex);
 
 const User = bookshelf.model("User", {
@@ -17,13 +21,88 @@ const User = bookshelf.model("User", {
 });
 
 db.run(
+  "CREATE TABLE if not exists users (id INTEGER primary key autoincrement, username varchar(200), email varchar(200), password varchar(200))"
+);
+
+app.post("/user", (req, res) => {
+  const user = {
+    username: req.body.username,
+    email: req.body.email,
+    password: req.body.password,
+  };
+  const sql = `INSERT into users (username, email, password) values (
+  "${user.username}" , "${user.email}" , "${user.password}" )`;
+  db.run(sql, function () {
+    res.json({
+      success: true,
+      message: "Inserted Successfully",
+      payload: { ...user, id: this.lastID },
+    });
+  });
+});
+
+app.get("/user", (req, res) => {
+  const user = [];
+  db.each(
+    "SELECT * from users",
+    function (err, row) {
+      user.push({ ...row });
+    },
+    function () {
+      res.json({
+        success: true,
+        payload: user,
+      });
+    }
+  );
+});
+
+app.delete("/user/:id", (req, res) => {
+  db.run(
+    "DELETE from users WHERE id = $id",
+    {
+      $id: req.params.id,
+    },
+    function () {
+      res.json({
+        success: true,
+        message: "Deleted Successfully",
+      });
+    }
+  );
+});
+
+app.post("/", (req, res) => {
+  new User({ email: req.body.email, password: req.body.password })
+    .fetch()
+    .then(processUser)
+    .catch(catchErrors);
+
+  function processUser(user) {
+    console.log(user);
+    res.json({
+      success: true,
+      message: "Login Successfully",
+      payload: user,
+    });
+  }
+
+  function catchErrors(error) {
+    console.log(error);
+    res.json({
+      success: false,
+      message: "Login Failed",
+    });
+  }
+});
+
+// Todo Table
+
+db.run(
   "CREATE TABLE if not exists todo (id INTEGER primary key autoincrement, title varchar(200), description varchar(200), isCompleted int(1))"
 );
 
 const todos = [];
-const app = express();
-app.use(cors());
-app.use(express.json());
 
 app.get("/todo", (req, res) => {
   const todos = [];
@@ -131,6 +210,8 @@ app.delete("/todo", (req, res) => {
   });
 });
 
+// Project Table
+
 db.run(
   "CREATE TABLE if not exists projects (id INTEGER primary key autoincrement, title varchar(200), description varchar(200), client varchar(200), start DATETIME , end DATETIME )"
 );
@@ -236,74 +317,7 @@ app.delete("/project", (req, res) => {
   });
 });
 
-db.run(
-  "CREATE TABLE if not exists users (id INTEGER primary key autoincrement, username varchar(200), email varchar(200), password varchar(200))"
-);
-
-app.post("/user", (req, res) => {
-  const user = {
-    username: req.body.username,
-    email: req.body.email,
-    password: req.body.password,
-  };
-  const sql = `INSERT into users (username, email, password) values (
-  "${user.username}" , "${user.email}" , "${user.password}" )`;
-  db.run(sql, function () {
-    res.json({
-      success: true,
-      message: "Inserted Successfully",
-      payload: { ...user, id: this.lastID },
-    });
-  });
-});
-
-app.get("/user", (req, res) => {
-  const user = [];
-  db.each(
-    "SELECT * from users",
-    function (err, row) {
-      user.push({ ...row });
-    },
-    function () {
-      res.json({
-        success: true,
-        payload: user,
-      });
-    }
-  );
-});
-
-app.delete("/user/:id", (req, res) => {
-  db.run(
-    "DELETE from users WHERE id = $id",
-    {
-      $id: req.params.id,
-    },
-    function () {
-      res.json({
-        success: true,
-        message: "Deleted Successfully",
-      });
-    }
-  );
-});
-
-app.post("/", (req, res) => {
-  new User({ email: req.body.email, password: req.body.password })
-    .fetch()
-    .then(processUser)
-    .catch(catchErrors);
-
-  function processUser(user) {
-    console.log(user);
-    console.log("Success!");
-  }
-
-  function catchErrors(error) {
-    console.log(error);
-    console.log("An error occured");
-  }
-});
+// Task Table
 
 db.get("PRAGMA foreign_keys = ON");
 
