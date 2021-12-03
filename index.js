@@ -2,6 +2,8 @@ const express = require("express");
 var sqlite3 = require("sqlite3").verbose();
 var cors = require("cors");
 var db = new sqlite3.Database("todos.db");
+const jwt = require('jsonwebtoken')
+const bcrypt = require('bcrypt')
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -78,6 +80,8 @@ app.post("/", (req, res) => {
     .then(processUser)
     .catch(catchErrors);
 
+    // const token = generateAuthToken(User);
+
   function processUser(user) {
     console.log(user);
     res.json({
@@ -95,6 +99,8 @@ app.post("/", (req, res) => {
     });
   }
 });
+
+
 
 // Todo Table
 
