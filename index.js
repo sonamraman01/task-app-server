@@ -2,25 +2,10 @@ const express = require("express");
 var sqlite3 = require("sqlite3").verbose();
 var cors = require("cors");
 var db = new sqlite3.Database("todos.db");
-const jwt = require('jsonwebtoken')
-const bcrypt = require('bcrypt')
+const jwt = require("jsonwebtoken");
 const app = express();
 app.use(cors());
 app.use(express.json());
-
-const knex = require("knex")({
-  client: "sqlite3",
-  connection: {
-    filename: "./todos.db",
-  },
-  useNullAsDefault: true,
-});
-
-const bookshelf = require("bookshelf")(knex);
-
-const User = bookshelf.model("User", {
-  tableName: "users",
-});
 
 db.run(
   "CREATE TABLE if not exists users (id INTEGER primary key autoincrement, username varchar(200), email varchar(200), password varchar(200))"
@@ -48,6 +33,7 @@ app.get("/user", (req, res) => {
   db.each(
     "SELECT * from users",
     function (err, row) {
+      delete row.password;
       user.push({ ...row });
     },
     function () {
@@ -74,33 +60,34 @@ app.delete("/user/:id", (req, res) => {
   );
 });
 
+const SECRET_KEY = "secretkey23456";
+const expiresIn = 24 * 60 * 60;
+
+const generateAuthToken = function (user) {
+  const token = jwt.sign(
+    {
+      id: user.id,
+      email: user.email,
+      username: user.username
+    },
+    SECRET_KEY,
+    {
+      expiresIn: expiresIn,
+      algorithm: "HS512",
+    }
+  );
+  return token;
+};
+
 app.post("/", (req, res) => {
-  new User({ email: req.body.email, password: req.body.password })
-    .fetch()
-    .then(processUser)
-    .catch(catchErrors);
-
-    // const token = generateAuthToken(User);
-
-  function processUser(user) {
-    console.log(user);
-    res.json({
-      success: true,
-      message: "Login Successfully",
-      payload: user,
-    });
-  }
-
-  function catchErrors(error) {
-    console.log(error);
-    res.json({
-      success: false,
-      message: "Login Failed",
-    });
-  }
+  db.get(
+    `SELECT * from users where email=? and password=? limit 1`,
+    [req.body.email, req.body.password],
+    (err, row) => {
+      res.json({user:row, access_token: generateAuthToken(row)});
+    }
+  );
 });
-
-
 
 // Todo Table
 
