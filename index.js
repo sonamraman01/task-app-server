@@ -7,6 +7,52 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+const SECRET_KEY = "secretkey23456";
+const expiresIn = 24 * 60 * 60;
+
+const generateAuthToken = function (user) {
+  const token = jwt.sign(
+    {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+    },
+    SECRET_KEY,
+    {
+      expiresIn: expiresIn,
+      algorithm: "HS512",
+    }
+  );
+  return token;
+};
+
+const authMiddleWare = async (req, res, next) => {
+  try {
+    const auth = req.header("Authorization");
+    if (!auth) {
+      return res.status(401).send({
+        message: "Not authorized to do this action",
+      });
+    }
+    const token = auth.replace("Bearer ", "");
+    const data = jwt.verify(token, SECRET_KEY);
+
+    const user = await db("tokens").where({ user_id: data.id });
+    if (!user) {
+      return res.status(401).send({
+        message: "Not authorized to do this action",
+      });
+    }
+    req.userId = data.id;
+    req.username = data.username;
+    req.email = data.email;
+
+    next();
+  } catch (error) {
+    return res.status(500).json({ message: `${JSON.stringify(error)}` });
+  }
+};
+
 db.run(
   "CREATE TABLE if not exists users (id INTEGER primary key autoincrement, username varchar(200), email varchar(200), password varchar(200))"
 );
@@ -23,7 +69,11 @@ app.post("/user", (req, res) => {
     res.json({
       success: true,
       message: "Inserted Successfully",
-      payload: { ...user, id: this.lastID },
+      payload: {
+        ...user,
+        id: this.lastID,
+        access_token: generateAuthToken(user),
+      },
     });
   });
 });
@@ -60,33 +110,33 @@ app.delete("/user/:id", (req, res) => {
   );
 });
 
-const SECRET_KEY = "secretkey23456";
-const expiresIn = 24 * 60 * 60;
-
-const generateAuthToken = function (user) {
-  const token = jwt.sign(
-    {
-      id: user.id,
-      email: user.email,
-      username: user.username
-    },
-    SECRET_KEY,
-    {
-      expiresIn: expiresIn,
-      algorithm: "HS512",
-    }
-  );
-  return token;
-};
-
 app.post("/", (req, res) => {
   db.get(
     `SELECT * from users where email=? and password=? limit 1`,
     [req.body.email, req.body.password],
     (err, row) => {
-      res.json({user:row, access_token: generateAuthToken(row)});
+      // res.status(404).json({
+      //   success: false,
+      //   message: "Login Failed",
+      //   payload: err
+      // })
+      // if (err) return res.status(404).send("Login Failed");
+      res.json({
+        success: true,
+        message: "Login Successfully",
+        payload: { user: row, access_token: generateAuthToken(row) },
+      });
     }
   );
+});
+
+app.post("/logout", (req, res) => {
+  db.get(`DELETE token from users where id= ${req.body.id}`, (err, row) => {
+    res.json({
+      success: true,
+      message: "Logout Successfully",
+    });
+  });
 });
 
 // Todo Table
