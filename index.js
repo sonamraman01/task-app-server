@@ -43,7 +43,7 @@ const authMiddleWare = async (req, res, next) => {
         message: "Not authorized to do this action",
       });
     }
-    req.userId = data.id;
+    req.id = data.id;
     req.username = data.username;
     req.email = data.email;
 
@@ -115,12 +115,11 @@ app.post("/", (req, res) => {
     `SELECT * from users where email=? and password=? limit 1`,
     [req.body.email, req.body.password],
     (err, row) => {
-      // res.status(404).json({
-      //   success: false,
-      //   message: "Login Failed",
-      //   payload: err
-      // })
-      // if (err) return res.status(404).send("Login Failed");
+      if (err)
+        res.status(404).json({
+          success: false,
+          message: "Invalid email or password",
+        });
       res.json({
         success: true,
         message: "Login Successfully",
@@ -131,7 +130,7 @@ app.post("/", (req, res) => {
 });
 
 app.post("/logout", (req, res) => {
-  db.get(`DELETE token from users where id= ${req.body.id}`, (err, row) => {
+  db.get(`DELETE token from users where id= ${req.body.userId}`, (err, row) => {
     res.json({
       success: true,
       message: "Logout Successfully",
