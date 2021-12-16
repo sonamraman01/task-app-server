@@ -13,9 +13,9 @@ const expiresIn = 24 * 60 * 60;
 const generateAuthToken = function (user) {
   const token = jwt.sign(
     {
-      id: user.id,
-      email: user.email,
-      username: user.username,
+      id: user?.id,
+      email: user?.email,
+      username: user?.username,
     },
     SECRET_KEY,
     {
@@ -36,25 +36,26 @@ const authMiddleWare = async (req, res, next) => {
     }
     const token = auth.replace("Bearer ", "");
     const data = jwt.verify(token, SECRET_KEY);
-
-    const user = await db("tokens").where({ user_id: data.id });
-    if (!user) {
-      return res.status(401).send({
-        message: "Not authorized to do this action",
-      });
-    }
-    req.id = data.id;
-    req.username = data.username;
-    req.email = data.email;
-
-    next();
-  } catch (error) {
-    return res.status(500).json({ message: `${JSON.stringify(error)}` });
+    db.get(
+      `SELECT * from users where token="${token}" limit 1`,
+      function (err, row) {
+        if (err || !row) {
+          return res.status(401).send({
+            message: "Not valid token",
+          });
+        }
+        req["user"] = {...data};
+        next();
+      }
+    );
+  } catch (e) {
+    console.log(e);
+    return res.status(404).json({ message: "Invalid token" });
   }
 };
 
 db.run(
-  "CREATE TABLE if not exists users (id INTEGER primary key autoincrement, username varchar(200), email varchar(200), password varchar(200))"
+  "CREATE TABLE if not exists users (id INTEGER primary key autoincrement, username varchar(200), email varchar(200) UNIQUE, password varchar(200), role varchar(200), token varchar(200))"
 );
 
 app.post("/user", (req, res) => {
@@ -62,9 +63,10 @@ app.post("/user", (req, res) => {
     username: req.body.username,
     email: req.body.email,
     password: req.body.password,
+    role: req.body.role,
   };
-  const sql = `INSERT into users (username, email, password) values (
-  "${user.username}" , "${user.email}" , "${user.password}" )`;
+  const sql = `INSERT into users (username, email, password, role) values (
+  "${user.username}" , "${user.email}" , "${user.password}" , "${user.role}")`;
   db.run(sql, function () {
     res.json({
       success: true,
@@ -72,13 +74,13 @@ app.post("/user", (req, res) => {
       payload: {
         ...user,
         id: this.lastID,
-        access_token: generateAuthToken(user),
+        // token: generateAuthToken(user),
       },
     });
   });
 });
 
-app.get("/user", (req, res) => {
+app.get("/user", authMiddleWare, (req, res) => {
   const user = [];
   db.each(
     "SELECT * from users",
@@ -112,28 +114,38 @@ app.delete("/user/:id", (req, res) => {
 
 app.post("/", (req, res) => {
   db.get(
-    `SELECT * from users where email=? and password=? limit 1`,
-    [req.body.email, req.body.password],
+    `SELECT * from users WHERE email="${req.body.email}" AND password="${req.body.password}" limit 1`,
+    // [req.body.email, req.body.password],
     (err, row) => {
       if (err)
         res.status(404).json({
           success: false,
           message: "Invalid email or password",
         });
-      res.json({
-        success: true,
-        message: "Login Successfully",
-        payload: { user: row, access_token: generateAuthToken(row) },
-      });
+      const token = generateAuthToken(row);
+      db.run(
+        `Update users SET token="${token}" WHERE id=${row?.id} `,
+        function () {
+          if(row)
+          res.json({
+            success: true,
+            message: "Login Successful",
+            payload: { ...row, token },
+          });
+          else{
+            res.sendStatus(404)
+          }
+        }
+      );
     }
   );
 });
 
 app.post("/logout", (req, res) => {
-  db.get(`DELETE token from users where id= ${req.body.userId}`, (err, row) => {
+  db.get(`UPDATE users SET token=null where id= ${req.body.id}`, (err, row) => {
     res.json({
       success: true,
-      message: "Logout Successfully",
+      message: "Logout Successful",
     });
   });
 });
@@ -146,7 +158,7 @@ db.run(
 
 const todos = [];
 
-app.get("/todo", (req, res) => {
+app.get("/todo", authMiddleWare, (req, res) => {
   const todos = [];
   db.each(
     "SELECT * from todo",
@@ -162,7 +174,7 @@ app.get("/todo", (req, res) => {
   );
 });
 
-app.get("/todo/:id", (req, res) => {
+app.get("/todo/:id", authMiddleWare, (req, res) => {
   const todo = [];
   db.each(
     "SELECT * from todo WHERE id = $id",
@@ -185,7 +197,7 @@ app.get("/todo/:id", (req, res) => {
   );
 });
 
-app.post("/todo", (req, res) => {
+app.post("/todo", authMiddleWare, (req, res) => {
   const todo = {
     title: req.body.title,
     description: req.body.description,
@@ -207,14 +219,14 @@ app.post("/todo", (req, res) => {
   );
 });
 
-app.patch("/todo/:id", (req, res) => {
+app.patch("/todo/:id", authMiddleWare, (req, res) => {
   const todo = {
     title: req.body.title,
     description: req.body.description,
     isCompleted: false,
   };
   db.run(
-    `UPDATE todo SET title = "${todo.title}", description= "${todo.description}", isCompleted= "${todo.isCompleted}" WHERE id = $id`,
+    `UPDATE todo SET title = "${todo.title}", description= "${todo.description}", isCompleted= ${todo.isCompleted} WHERE id = $id`,
     {
       $id: req.params.id,
     },
@@ -228,7 +240,26 @@ app.patch("/todo/:id", (req, res) => {
   );
 });
 
-app.delete("/todo/:id", (req, res) => {
+app.patch("/todo/isComplete/:id", authMiddleWare, (req, res) => {
+  const todo = {
+    isCompleted: req.body.isCompleted,
+  };
+  db.run(
+    `UPDATE todo SET isCompleted= ${todo.isCompleted} WHERE id = $id`,
+    {
+      $id: req.params.id,
+    },
+    function () {
+      res.json({
+        success: true,
+        message: "Updated Successfully",
+        payload: { ...todo, update: this.changes },
+      });
+    }
+  );
+});
+
+app.delete("/todo/:id", authMiddleWare, (req, res) => {
   db.run(
     "DELETE from todo WHERE id = $id",
     {
@@ -243,7 +274,7 @@ app.delete("/todo/:id", (req, res) => {
   );
 });
 
-app.delete("/todo", (req, res) => {
+app.delete("/todo", authMiddleWare, (req, res) => {
   db.run("DELETE from todo WHERE 1", function () {
     res.json({
       success: true,
@@ -258,7 +289,7 @@ db.run(
   "CREATE TABLE if not exists projects (id INTEGER primary key autoincrement, title varchar(200), description varchar(200), client varchar(200), start DATETIME , end DATETIME )"
 );
 
-app.post("/project", (req, res) => {
+app.post("/project", authMiddleWare, (req, res) => {
   const project = {
     title: req.body.title,
     description: req.body.description,
@@ -277,7 +308,7 @@ app.post("/project", (req, res) => {
   });
 });
 
-app.patch("/project/:id", (req, res) => {
+app.patch("/project/:id", authMiddleWare, (req, res) => {
   const project = {
     title: req.body.title,
     description: req.body.description,
@@ -300,7 +331,7 @@ app.patch("/project/:id", (req, res) => {
   );
 });
 
-app.get("/project", (req, res) => {
+app.get("/project", authMiddleWare, (req, res) => {
   const projects = [];
   db.each(
     "SELECT * from projects",
@@ -316,7 +347,7 @@ app.get("/project", (req, res) => {
   );
 });
 
-app.get("/project/:id", (req, res) => {
+app.get("/project/:id", authMiddleWare, (req, res) => {
   const projects = [];
   db.each(
     "SELECT * from projects WHERE id = $id",
@@ -335,7 +366,7 @@ app.get("/project/:id", (req, res) => {
   );
 });
 
-app.delete("/project/:id", (req, res) => {
+app.delete("/project/:id", authMiddleWare, (req, res) => {
   db.run(
     "DELETE from projects WHERE id = $id",
     {
@@ -350,7 +381,7 @@ app.delete("/project/:id", (req, res) => {
   );
 });
 
-app.delete("/project", (req, res) => {
+app.delete("/project", authMiddleWare, (req, res) => {
   db.run("DELETE from projects WHERE 1", function () {
     res.json({
       success: true,
@@ -367,7 +398,7 @@ db.run(
   "CREATE TABLE if not exists tasks (id INTEGER primary key autoincrement, title varchar(200), description varchar(200), start DATETIME , end DATETIME, assigned_to INTEGER, project_id INTEGER , isCompleted int(1), FOREIGN KEY (assigned_to) REFERENCES users (id), FOREIGN KEY (project_id) REFERENCES projects (id)  )"
 );
 
-app.post("/task", (req, res) => {
+app.post("/task", authMiddleWare, (req, res) => {
   const task = {
     title: req.body.title,
     description: req.body.description,
@@ -388,7 +419,7 @@ app.post("/task", (req, res) => {
   });
 });
 
-app.patch("/task/:id", (req, res) => {
+app.patch("/task/:id", authMiddleWare, (req, res) => {
   const task = {
     title: req.body.title,
     description: req.body.description,
@@ -399,7 +430,7 @@ app.patch("/task/:id", (req, res) => {
     isCompleted: false,
   };
   db.run(
-    `UPDATE tasks SET title = "${task.title}", description= "${task.description}", start= '${task.start}', end = '${task.end}', assigned_to= ${task.assigned_to}, project_id= ${task.project_id}   WHERE id = $id`,
+    `UPDATE tasks SET title = "${task.title}", description= "${task.description}", start= '${task.start}', end = '${task.end}', assigned_to= ${task.assigned_to}, project_id= ${task.project_id}, isCompleted= ${task.isCompleted} WHERE id = $id`,
     {
       $id: req.params.id,
     },
@@ -413,7 +444,7 @@ app.patch("/task/:id", (req, res) => {
   );
 });
 
-app.get("/task", (req, res) => {
+app.get("/task", authMiddleWare, (req, res) => {
   const tasks = [];
   db.each(
     "SELECT * from tasks",
@@ -429,7 +460,7 @@ app.get("/task", (req, res) => {
   );
 });
 
-app.get("/task/:id", (req, res) => {
+app.get("/task/:id", authMiddleWare, (req, res) => {
   const task = [];
   db.each(
     "SELECT * from tasks WHERE id = $id",
@@ -448,7 +479,7 @@ app.get("/task/:id", (req, res) => {
   );
 });
 
-app.delete("/task/:id", (req, res) => {
+app.delete("/task/:id", authMiddleWare, (req, res) => {
   db.run(
     "DELETE from tasks WHERE id = $id",
     {
@@ -463,7 +494,7 @@ app.delete("/task/:id", (req, res) => {
   );
 });
 
-app.delete("/task", (req, res) => {
+app.delete("/task", authMiddleWare, (req, res) => {
   db.run("DELETE from tasks WHERE 1", function () {
     res.json({
       success: true,
@@ -473,7 +504,7 @@ app.delete("/task", (req, res) => {
 });
 
 // app.delete("/", (req, res) => {
-//   db.run("DROP TABLE IF EXISTS tasks", function () {
+//   db.run("DROP TABLE IF EXISTS users", function () {
 //     res.json({
 //       success: true,
 //       message: "Deleted Successfully",
